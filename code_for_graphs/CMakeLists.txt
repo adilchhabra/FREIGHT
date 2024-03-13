@@ -46,6 +46,10 @@ if(COMPILER_SUPPORTS_FPERMISSIVE)
   add_definitions(-fpermissive)
 endif()
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_definitions(-fconstexpr-steps=100000000)
+endif()
+
 # check dependencies
 find_package(MPI REQUIRED)
 find_package(OpenMP)

@@ -1,17 +1,11 @@
 #!/bin/bash
+set -e
 
-NCORES=12
-unamestr=`uname`
+rm -rf build deploy
 
-rm -rf deploy
-rm -rf build
-mkdir build
-cd build 
-cmake ../
-make -j $NCORES
-cd ..
+cmake -B build 
+cmake --build build --parallel
 
 mkdir deploy
 cp ./build/freight_graphs deploy/
-
 rm -rf build
