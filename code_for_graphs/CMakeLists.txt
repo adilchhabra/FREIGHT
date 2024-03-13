@@ -46,11 +46,9 @@ if(COMPILER_SUPPORTS_FPERMISSIVE)
   add_definitions(-fpermissive)
 endif()
 
-#CHECK_CXX_COMPILER_FLAG(-fconstexpr-steps=1000000000 COMPILER_SUPPORTS_CONSTEXPR_STEPS)
-#if (COMPILER_SUPPORTS_CONSTEXPR_STEPS)
-#  add_definitions(-fconstexpr-steps=100000000)
-#endif()
-add_definitions(-fconstexpr-steps=100000000)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_definitions(-fconstexpr-steps=100000000)
+endif()
 
 # check dependencies
 find_package(MPI REQUIRED)
