@@ -328,8 +328,8 @@ typedef enum {
 //////////////////////////////////////////////////////
 
 // default values recommended by http://isthe.com/chongo/tech/comp/fnv/
-const uint32_t Prime = 0x01000193; //   16777619
-const uint32_t Seed  = 0x811C9DC5; // 2166136261
+constexpr uint32_t Prime = 0x01000193; //   16777619
+constexpr uint32_t Seed  = 0x811C9DC5; // 2166136261
 // hash a single byte
 inline uint32_t fnv0a(unsigned char oneByte, uint32_t hash = Seed) {
 	return (oneByte ^ hash) * Prime;

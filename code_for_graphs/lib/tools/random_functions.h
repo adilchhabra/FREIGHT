@@ -237,7 +237,7 @@ class random_functions {
                         m_seed = seed;
                         srand(seed);
                         m_mt.seed(m_seed);
-			uint64_t m_rand = 1;
+			[[maybe_unused]] uint64_t m_rand = 1;
 			rand_counter = crc32(seed);
                 }
 

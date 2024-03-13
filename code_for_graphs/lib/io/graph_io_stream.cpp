@@ -115,7 +115,7 @@ void graph_io_stream::streamEvaluatePartition(PartitionConfig & config, const st
         std::ifstream in(filename.c_str());
         if (!in) {
                 std::cerr << "Error opening " << filename << std::endl;
-                return 1;
+                return;
         }
         long nmbNodes;
         long nmbEdges;
@@ -138,8 +138,8 @@ void graph_io_stream::streamEvaluatePartition(PartitionConfig & config, const st
                 read_nw = true;
         }
 	NodeID target;
-        NodeWeight total_nodeweight = 0;
-        EdgeWeight total_edgeweight = 0;
+        [[maybe_unused]] NodeWeight total_nodeweight = 0;
+        [[maybe_unused]] EdgeWeight total_edgeweight = 0;
 	edgeCut = 0;
 	qap = 0;
 	std::vector< NodeID > *perm_rank = NULL;
@@ -218,7 +218,7 @@ void graph_io_stream::readPartition(PartitionConfig & config, const std::string 
 		std::ifstream in(filename.c_str());                                                  
 	if (!in) {                                                                           
 		std::cerr << "Error opening file" << filename << std::endl;                  
-		return 1;                                                                    
+		return;                                                                    
 	}                                                                                    
 
 	PartitionID max = 0;                                                                 
