@@ -76,7 +76,14 @@ void graph_io_stream::streamEvaluateHPartition_pinsl(PartitionConfig & config, c
         while(  std::getline(in, (*lines)[0])) {
 		if ((*lines)[0][0] == '%') continue; // a comment in the file
                 NodeID node = node_counter++;
-		PartitionID partitionIDSource = (*config.stream_nodes_assign)[node];
+		PartitionID partitionIDSource;
+        if(config.rle_length==-1) {
+            block = (*config.stream_nodes_assign)[node];
+        } else if (config.rle_length==0) {
+            block = block_assignments->GetValueByIndex(node);
+        } else {
+            block = block_assignments->GetValueByBatchIndex(node / config.rle_length, node % config.rle_length);
+        }
 
 		input = new std::vector<std::vector<LongNodeID>>(1);
 		ss2 = new buffered_input(lines);
@@ -103,7 +110,14 @@ void graph_io_stream::streamEvaluateHPartition_pinsl(PartitionConfig & config, c
 			std::unordered_set<PartitionID> cut_partitions;
 			for (NodeID i=0; i<net_size; i++) {
 				NodeID pin = line_numbers[col_counter++];
-				PartitionID block = (*config.stream_nodes_assign)[pin-1];
+				PartitionID block;
+                if(config.rle_length==-1) {
+                    block = (*config.stream_nodes_assign)[pin-1];
+                } else if (config.rle_length==0) {
+                    block = block_assignments->GetValueByIndex(pin-1);
+                } else {
+                    block = block_assignments->GetValueByBatchIndex((pin - 1) / config.rle_length, (pin - 1) % config.rle_length);
+                }
 				if (targetGlobalPar == INVALID_PARTITION || block == targetGlobalPar) {
 					targetGlobalPar = block;
 				} else if (block != INVALID_PARTITION) {
