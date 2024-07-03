@@ -110,7 +110,7 @@ void graph_io_stream::streamEvaluateHPartition_pinsl(PartitionConfig & config, c
 			std::unordered_set<PartitionID> cut_partitions;
 			for (NodeID i=0; i<net_size; i++) {
 				NodeID pin = line_numbers[col_counter++];
-				PartitionID block;
+				PartitionID block = INVALID_PARTITION;
                 if(config.rle_length==-1) {
                     block = (*config.stream_nodes_assign)[pin-1];
                 } else if (config.rle_length==0) {
@@ -208,7 +208,14 @@ void graph_io_stream::streamEvaluateHPartition_netl(PartitionConfig & config, co
         while(  std::getline(in, (*lines)[0])) {
 		if ((*lines)[0][0] == '%') continue; // a comment in the file
                 NodeID node = node_counter++;
-		PartitionID node_block = (*config.stream_nodes_assign)[node];
+		PartitionID node_block = INVALID_PARTITION;
+        if(config.rle_length==-1) {
+            node_block = (*config.stream_nodes_assign)[node];
+        } else if (config.rle_length==0) {
+            node_block = block_assignments->GetValueByIndex(node);
+        } else {
+            node_block = block_assignments->GetValueByBatchIndex(node / config.rle_length, node % config.rle_length);
+        }
 
 		input = new std::vector<std::vector<LongNodeID>>(1);
 		ss2 = new buffered_input(lines);
@@ -444,7 +451,25 @@ void graph_io_stream::writePartitionStream(PartitionConfig & config, const std::
         f.close();
 }
 
+void graph_io_stream::writePartitionStream(PartitionConfig &config,
+                                           const std::string &filename,
+                                           const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments) {
+    std::ofstream f(filename.c_str());
+    std::cout << "writing partition to " << filename << " ... " << std::endl;
 
+    for (int node = 0; node < config.total_nodes; node++) {
+        if (config.rle_length == -1) {
+            f << (*config.stream_nodes_assign)[node] << "\n";
+        } else if (config.rle_length == 0) {
+            f << block_assignments->GetValueByIndex(node) << "\n";
+        } else {
+            f << block_assignments->GetValueByBatchIndex(node / config.rle_length, (node % config.rle_length))
+              << "\n";
+        }
+    }
+
+    f.close();
+}
 
 void graph_io_stream::readhMetisHyperGraphWeighted(hypergraph & H, const std::string & filename) {
         std::string line;

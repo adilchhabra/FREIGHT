@@ -31,7 +31,7 @@ class vertex_partitioning {
 		void propagate_clear_edgeweight(int my_thread);
 		void remove_nodeweight(PartitionID block, NodeWeight n_weight);
 		void remove_parent_nodeweight(NodeWeight n_weight); 
-		PartitionID solve_node(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
+		PartitionID solve_node(LongNodeID curr_node_id, NodeWeight curr_node_weight, PartitionID previous_assignment, double kappa, int my_thread);
 		PartitionID solve_hashing(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
 		PartitionID set_decision(PartitionID block, LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
 		void set_original_problem(vertex_partitioning* original_problem);
@@ -61,18 +61,26 @@ class vertex_partitioning {
 		std::vector<floating_block> blocks;
         protected:
 
-		PartitionID solve(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
-		PartitionID solve_sampling_neighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
-		PartitionID solve_sampling_nonneighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
+		PartitionID solve(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                          PartitionID previous_assignment, double kappa, int my_thread);
+		PartitionID solve_sampling_neighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                             PartitionID previous_assignment, double kappa, int my_thread);
+		PartitionID solve_sampling_nonneighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                PartitionID previous_assignment, double kappa, int my_thread);
 		PartitionID solve_sampling_blocks(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
-		PartitionID solve_sampling_twofold(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
-		PartitionID solve_linear_complexity(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
-		PartitionID solve_sampl_neighb_linear_complex(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread);
+		PartitionID solve_sampling_twofold(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                           PartitionID previous_assignment, double kappa, int my_thread);
+		PartitionID solve_linear_complexity(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                            PartitionID previous_assignment, double kappa, int my_thread);
+		PartitionID solve_sampl_neighb_linear_complex(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                      PartitionID previous_assignment, double kappa, int my_thread);
 		virtual float compute_score(floating_block & block, int my_thread);
 
-		void gothrough_neighborhood(NodeID& decision, float& best, int my_thread);
+		void gothrough_neighborhood(NodeID& decision, float& best,
+                                    PartitionID previous_assignment, double kappa, int my_thread);
 		void sample_neighborhood(PartitionID sample_count, NodeID& decision, float& best, int my_thread);
-		void check_best_nonneighbor(NodeID& decision, float& best, int my_thread);
+		void check_best_nonneighbor(NodeID& decision, float& best,
+                                    PartitionID previous_assignment, double kappa, int my_thread);
 		void sample_blocks(PartitionID sample_count, NodeID& decision, float& best, int my_thread);
 		void amortized_sampling_for_feasibility(NodeID& decision);
 
@@ -161,7 +169,8 @@ inline PartitionID vertex_partitioning::force_decision_block(floating_block & re
 }
 
 
-inline PartitionID vertex_partitioning::solve_node(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread) {
+inline PartitionID vertex_partitioning::solve_node(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                   PartitionID previous_assignment, double kappa, int my_thread) {
 	PartitionID decision;
 	if (hashing) {
 		decision = solve_hashing(curr_node_id, curr_node_weight, my_thread);
@@ -169,29 +178,33 @@ inline PartitionID vertex_partitioning::solve_node(LongNodeID curr_node_id, Node
 		this->amortized_rounds_for_feasibility_sampling++;
 		switch(sampling) {
 			case SAMPLING_INACTIVE_LINEAR_COMPLEXITY:
-				decision = solve_linear_complexity(curr_node_id, curr_node_weight, my_thread);
+				decision = solve_linear_complexity(curr_node_id, curr_node_weight, previous_assignment, kappa, my_thread);
 #pragma omp critical(update_self_sorting_vector)
 				this->sorted_blocks.increment(decision);
 				break;
 			case SAMPLING_NEIGHBORS_LINEAR_COMPLEXITY:
-				decision = solve_sampl_neighb_linear_complex(curr_node_id, curr_node_weight, my_thread);
+				decision = solve_sampl_neighb_linear_complex(curr_node_id, curr_node_weight,
+                                                             previous_assignment, kappa, my_thread);
 #pragma omp critical(update_self_sorting_vector)
 				this->sorted_blocks.increment(decision);
 				break;
 			case SAMPLING_INACTIVE:
-				decision = solve(curr_node_id, curr_node_weight, my_thread);
+				decision = solve(curr_node_id, curr_node_weight, previous_assignment, kappa, my_thread);
 				break;
 			case SAMPLING_NEIGHBORS:
-				decision = solve_sampling_neighbors(curr_node_id, curr_node_weight, my_thread);
+				decision = solve_sampling_neighbors(curr_node_id, curr_node_weight,
+                                                    previous_assignment, kappa, my_thread);
 				break;
 			case SAMPLING_NONNEIGHBORS:
-				decision = solve_sampling_nonneighbors(curr_node_id, curr_node_weight, my_thread);
+				decision = solve_sampling_nonneighbors(curr_node_id, curr_node_weight,
+                                                       previous_assignment, kappa, my_thread);
 				break;
 			case SAMPLING_BLOCKS:
 				decision = solve_sampling_blocks(curr_node_id, curr_node_weight, my_thread);
 				break;
 			case SAMPLING_TWOFOLD:
-				decision = solve_sampling_twofold(curr_node_id, curr_node_weight, my_thread);
+				decision = solve_sampling_twofold(curr_node_id, curr_node_weight,
+                                                  previous_assignment, kappa, my_thread);
 				break;
 		}
 	}
@@ -209,7 +222,8 @@ inline PartitionID vertex_partitioning::solve_hashing(LongNodeID curr_node_id, N
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);                             
 }                                                                                                             
 
-inline PartitionID vertex_partitioning::solve(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread) {
+inline PartitionID vertex_partitioning::solve(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                              PartitionID previous_assignment, double kappa, int my_thread) {
 	float best = std::numeric_limits<float>::lowest();                                                    
 	float score;                                                                                          
 	PartitionID k = blocks.size();                                                                        
@@ -219,7 +233,16 @@ inline PartitionID vertex_partitioning::solve(LongNodeID curr_node_id, NodeWeigh
 		if (block.fully_loaded()) {                                                                   
 			continue;                                                                             
 		}                                                                                             
-		score = compute_score(block, my_thread);                                                      
+		score = compute_score(block, my_thread);
+        // kappa score multiplier
+        if (block.get_block_id() == previous_assignment) {
+            if (score > 0) {
+                std::cout << "Mult with " << kappa << std::endl;
+                score = score * kappa; // mult not good enough
+            } else {
+                score = score / kappa;
+            }
+        }
 		if (score > best || (random_obj.nextBool() && score == best)) {                               
 			decision = block.get_block_id();                                                      
 			best = score;                                                                         
@@ -230,13 +253,14 @@ inline PartitionID vertex_partitioning::solve(LongNodeID curr_node_id, NodeWeigh
 
 
 
-inline PartitionID vertex_partitioning::solve_sampling_neighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread){
+inline PartitionID vertex_partitioning::solve_sampling_neighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                                 PartitionID previous_assignment, double kappa, int my_thread){
 	float best = std::numeric_limits<float>::lowest();
 	PartitionID decision = random_functions::nextIntHashing(blocks.size());
 	/* NodeID decision = crc32(curr_node_id)% (blocks.size()); */
 	PartitionID n_neighbors = neighbor_blocks[my_thread].size();
 	if (n_neighbors <= n_samples*sampling_threashold) {
-		gothrough_neighborhood(decision, best, my_thread);
+		gothrough_neighborhood(decision, best, previous_assignment, kappa, my_thread);
 	} else {
 		sample_neighborhood(n_samples, decision, best, my_thread);
 	}
@@ -244,11 +268,12 @@ inline PartitionID vertex_partitioning::solve_sampling_neighbors(LongNodeID curr
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);
 }
 
-inline PartitionID vertex_partitioning::solve_sampling_nonneighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread) {
+inline PartitionID vertex_partitioning::solve_sampling_nonneighbors(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                                    PartitionID previous_assignment, double kappa, int my_thread) {
 	float best = std::numeric_limits<float>::lowest();
 	PartitionID decision = random_functions::nextIntHashing(blocks.size());
 	/* NodeID decision = crc32(curr_node_id)% (blocks.size()); */
-	gothrough_neighborhood(decision, best, my_thread);
+	gothrough_neighborhood(decision, best, previous_assignment, kappa, my_thread);
 	sample_blocks(n_samples, decision, best, my_thread);
 	amortized_sampling_for_feasibility(decision);
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);
@@ -263,14 +288,15 @@ inline PartitionID vertex_partitioning::solve_sampling_blocks(LongNodeID curr_no
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);
 }
 
-inline PartitionID vertex_partitioning::solve_sampling_twofold(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread){
+inline PartitionID vertex_partitioning::solve_sampling_twofold(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                               PartitionID previous_assignment, double kappa, int my_thread){
 	float best = std::numeric_limits<float>::lowest();
 	PartitionID decision = random_functions::nextIntHashing(blocks.size());
 	/* NodeID decision = crc32(curr_node_id)% (blocks.size()); */
 	PartitionID n_neighbors = neighbor_blocks[my_thread].size();
 	// Sample neighbors
 	if (n_neighbors <= ceil(n_samples/2)) {
-		gothrough_neighborhood(decision, best, my_thread);
+		gothrough_neighborhood(decision, best, previous_assignment, kappa, my_thread);
 	} else {
 		sample_neighborhood(ceil(n_samples/2), decision, best, my_thread);
 	}
@@ -280,32 +306,36 @@ inline PartitionID vertex_partitioning::solve_sampling_twofold(LongNodeID curr_n
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);
 }
 
-inline PartitionID vertex_partitioning::solve_linear_complexity(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread) {
+inline PartitionID vertex_partitioning::solve_linear_complexity(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                                PartitionID previous_assignment, double kappa, int my_thread) {
 	float best = std::numeric_limits<float>::lowest();
 	PartitionID decision = random_functions::nextIntHashing(blocks.size());
 	/* NodeID decision = crc32(curr_node_id)% (blocks.size()); */
-	gothrough_neighborhood(decision, best, my_thread);
-	check_best_nonneighbor(decision, best, my_thread);
+	gothrough_neighborhood(decision, best, previous_assignment, kappa, my_thread);
+	check_best_nonneighbor(decision, best, previous_assignment, kappa, my_thread);
 	/* amortized_sampling_for_feasibility(decision); */
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);
 }
 
-inline PartitionID vertex_partitioning::solve_sampl_neighb_linear_complex(LongNodeID curr_node_id, NodeWeight curr_node_weight, int my_thread) {
+inline PartitionID vertex_partitioning::solve_sampl_neighb_linear_complex(LongNodeID curr_node_id, NodeWeight curr_node_weight,
+                                                                          PartitionID previous_assignment, double kappa, int my_thread) {
 	float best = std::numeric_limits<float>::lowest();
 	PartitionID decision = random_functions::nextIntHashing(blocks.size());
 	/* NodeID decision = crc32(curr_node_id)% (blocks.size()); */
 	PartitionID n_neighbors = neighbor_blocks[my_thread].size();
 	if (n_neighbors <= n_samples*sampling_threashold) {
-		gothrough_neighborhood(decision, best, my_thread);
+		gothrough_neighborhood(decision, best, previous_assignment, kappa, my_thread);
 	} else {
 		sample_neighborhood(n_samples, decision, best, my_thread);
 	}
-	check_best_nonneighbor(decision, best, my_thread);
+	check_best_nonneighbor(decision, best, previous_assignment, kappa, my_thread);
 	/* amortized_sampling_for_feasibility(decision); */
 	return set_decision(decision, curr_node_id, curr_node_weight, my_thread);
 }
 
-inline void vertex_partitioning::gothrough_neighborhood(NodeID& decision, float& best, int my_thread) {
+inline void vertex_partitioning::gothrough_neighborhood(NodeID& decision, float& best,
+                                                        PartitionID previous_assignment, double kappa,
+                                                        int my_thread) {
 	float score;
 	for (auto id : neighbor_blocks[my_thread]) {
 		auto& block = blocks[id];
@@ -313,6 +343,14 @@ inline void vertex_partitioning::gothrough_neighborhood(NodeID& decision, float&
 			continue;
 		}
 		score = compute_score(block, my_thread);
+        // kappa score multiplier
+        if (block.get_block_id() == previous_assignment) {
+            if (score > 0) {
+                score = score * kappa; // mult not good enough
+            } else {
+                score = score / kappa;
+            }
+        }
 		if (score > best) {
 			decision = block.get_block_id();
 			best = score;
@@ -320,11 +358,21 @@ inline void vertex_partitioning::gothrough_neighborhood(NodeID& decision, float&
 	}
 }
 
-inline void vertex_partitioning::check_best_nonneighbor(NodeID& decision, float& best, int my_thread) {
+inline void vertex_partitioning::check_best_nonneighbor(NodeID& decision, float& best,
+                                                        PartitionID previous_assignment, double kappa,
+                                                        int my_thread) {
 	float score;
 	PartitionID id = this->sorted_blocks[0]; // it does not matter whether or not it is a nonneighbor
 	auto& block = blocks[id];
 	score = compute_score(block, my_thread);
+    // kappa score multiplier
+    if (block.get_block_id() == previous_assignment) {
+        if (score > 0) {
+            score = score * kappa; // mult not good enough
+        } else {
+            score = score / kappa;
+        }
+    }
 	if (score > best) {
 		decision = block.get_block_id();
 		best = score;

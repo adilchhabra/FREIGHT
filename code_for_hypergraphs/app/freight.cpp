@@ -163,7 +163,7 @@ int main(int argn, char **argv) {
 #elif defined MODE_NETLIST
 			graph_io_stream::readNodeOnePass_netl(config, curr_node, my_thread, input, block_assignments, onepass_partitioner);
 #endif
-			PartitionID block = onepass_partitioner->solve_node(curr_node, 1, my_thread);
+			PartitionID block = onepass_partitioner->solve_node(curr_node, 1, config.previous_assignment, config.kappa, my_thread);
 			graph_io_stream::register_result(config, curr_node, block, my_thread, block_assignments);
 #if defined MODE_NETLIST
 			if(config.dynamic_threashold) {
@@ -191,7 +191,7 @@ int main(int argn, char **argv) {
 	}
 
 	// output some information about the partition that we have computed 
-        std::cout << "Hypergraph has " << config.stream_nodes_assign->size() <<  " nodes and " << config.total_edges <<  " nets"  << std::endl;
+    std::cout << "Hypergraph has " << config.total_nodes <<  " nodes and " << config.total_edges <<  " nets"  << std::endl;
 	std::cout << "Total processing time: " << total_time  << std::endl;
 	std::cout << "io time: " << buffer_io_time  << std::endl;
 
@@ -220,7 +220,7 @@ int main(int argn, char **argv) {
 	}
 
 	if (!config.suppress_file_output) {
-		graph_io_stream::writePartitionStream(config, filename.str());
+		graph_io_stream::writePartitionStream(config, filename.str(), block_assignments);
 	} else {
 		std::cout << "No partition will be written as output." << std::endl;
 	}

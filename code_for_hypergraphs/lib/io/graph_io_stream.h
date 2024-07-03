@@ -92,6 +92,10 @@ class graph_io_stream {
 		void writePartitionStream(PartitionConfig & config, const std::string & filename);
 
                 static
+        void writePartitionStream(PartitionConfig & config, const std::string & filename,
+                                  const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments);
+
+                static
 		void readhMetisHyperGraphWeighted(hypergraph & H, const std::string & filename);
 
                 static
@@ -238,7 +242,7 @@ inline void graph_io_stream::readNodeOnePass_netl (PartitionConfig & config, Lon
                                                     std::vector<std::vector<LongNodeID>>* &input,
                                                     const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
                                                     vertex_partitioning* onepass_partitioner) {
-	/* NodeWeight total_nodeweight = 0; */
+    /* NodeWeight total_nodeweight = 0; */
 	auto& read_ew = config.read_ew;
 	auto& read_nw = config.read_nw;
 	NodeWeight weight;
@@ -301,7 +305,19 @@ inline void graph_io_stream::readNodeOnePass_netl (PartitionConfig & config, Lon
 			net = line_numbers[col_counter++];
 			EdgeWeight edge_weight = (read_ew) ? line_numbers[col_counter++] : 1;
 
-			PartitionID targetGlobalPar = (*config.stream_edges_assign)[net-1];
+			PartitionID targetGlobalPar = INVALID_PARTITION;
+            if(net-1 < curr_node) {
+                if (config.rle_length == -1) {
+                    targetGlobalPar = (*config.stream_nodes_assign)[net - 1];
+                } else if (config.rle_length == 0) {
+                    targetGlobalPar = block_assignments->GetValueByIndex(net - 1);
+                } else {
+                    targetGlobalPar = block_assignments->GetValueByBatchIndex((net - 1) / config.rle_length,
+                                                                    (net - 1) % config.rle_length);
+                }
+                //if(targetGlobalPar == INVALID_PARTITION)
+                //std::cout << "n-1 = " << net-1 << " is less than current node " << curr_node << std::endl;
+            }
 			if(targetGlobalPar != CUT_NET) valid_neighboring_nets.push_back(net-1);
 			if(targetGlobalPar != INVALID_PARTITION && targetGlobalPar != CUT_NET) {
 				PartitionID key = all_blocks_to_keys[targetGlobalPar];
