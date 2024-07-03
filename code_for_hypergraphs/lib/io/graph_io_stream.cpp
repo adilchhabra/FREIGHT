@@ -78,11 +78,11 @@ void graph_io_stream::streamEvaluateHPartition_pinsl(PartitionConfig & config, c
                 NodeID node = node_counter++;
 		PartitionID partitionIDSource;
         if(config.rle_length==-1) {
-            block = (*config.stream_nodes_assign)[node];
+            partitionIDSource = (*config.stream_nodes_assign)[node];
         } else if (config.rle_length==0) {
-            block = block_assignments->GetValueByIndex(node);
+            partitionIDSource = block_assignments->GetValueByIndex(node);
         } else {
-            block = block_assignments->GetValueByBatchIndex(node / config.rle_length, node % config.rle_length);
+            partitionIDSource = block_assignments->GetValueByBatchIndex(node / config.rle_length, node % config.rle_length);
         }
 
 		input = new std::vector<std::vector<LongNodeID>>(1);
