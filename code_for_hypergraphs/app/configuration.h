@@ -596,6 +596,10 @@ inline void configuration::standard( PartitionConfig & partition_config ) {
         (*partition_config.t2)				   = 0;
         (*partition_config.t3)				   = 0;
 
+    // run length compression
+    partition_config.rle_length=-1;
+    partition_config.kappa=1;
+    partition_config.previous_assignment=0;
 
 	// Initial partitioning via growning multiple BFS trees around artificial nodes
         partition_config.initial_part_multi_bfs		   = false;

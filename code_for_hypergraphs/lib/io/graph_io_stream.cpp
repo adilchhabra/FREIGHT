@@ -23,7 +23,7 @@ graph_io_stream::~graph_io_stream() {
 }
 
 void graph_io_stream::streamEvaluateHPartition_pinsl(PartitionConfig & config, const std::string & filename, double& cutNet, double& connectivity,
-					EdgeWeight& qap, LongNodeID& pin_count) {
+					EdgeWeight& qap, LongNodeID& pin_count, const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments) {
 	std::vector<std::vector<LongNodeID>>* input;
 	std::vector<std::string>* lines;
 	lines = new std::vector<std::string>(1);
@@ -135,7 +135,7 @@ void graph_io_stream::streamEvaluateHPartition_pinsl(PartitionConfig & config, c
 }
 
 void graph_io_stream::streamEvaluateHPartition_netl(PartitionConfig & config, const std::string & filename, double& cutNet, double& connectivity, 
-						EdgeWeight& qap, LongNodeID& pin_count) {
+						EdgeWeight& qap, LongNodeID& pin_count, const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments) {
 	std::vector<std::vector<LongNodeID>>* input;
 	std::vector<std::string>* lines;
 	lines = new std::vector<std::string>(1);

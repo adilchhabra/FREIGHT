@@ -235,7 +235,17 @@ int parse_parameters(int argn, char **argv,
         struct arg_int *omp_chunk			     = arg_int0(NULL, "omp_chunk", NULL, "OpenMP chunk sie to be combined with omp_schedule. (Default: 200)");
 	struct arg_lit *use_self_sorting_array	             = arg_lit0(NULL, "use_self_sorting_array", "Optimized data structure that makes Fennel and LDG O(n+m+k). (Default: disabled)");
 	struct arg_dbl *sampling_threashold                  = arg_dbl0(NULL, "sampling_threashold", NULL, "Minimum ratio of edges (r. neighboring blocks) by samples to activate the sampling routine. Default: 1");
-	
+
+    // run length compression
+    struct arg_int *rle_length =
+            arg_int0(NULL, "rle_length", NULL,
+                     "Default = std::vector. Set to 0 for full RLE or any other "
+                     "value for vector of RLEs.");
+    struct arg_dbl *kappa = arg_dbl0(NULL, "kappa", NULL,
+                                     "Prioritize previous block assignment by "
+                                     "kappa times: Default: Disabled(1).");
+
+
 	// translation of graphs
         struct arg_str *graph_translation_specs		     = arg_str0(NULL, "graph_translation_specs", NULL, "Graph translation input and output formats (hmetis_pinsetlist|hmetis_netlist|hmetis_edgelist|hmetis_matrixmarket|metis_pinsetlist_edgetonet|metis_netlist_edgetonet|metis_pinsetlist_nodetonet|metis_netlist_nodetonet|metis_hmetis_edgetonet|metis_hmetis_nodetonet|metis_edgestream|hmetis_print_pin_count). (Default: hmetis_pinsetlist)");
         struct arg_lit *no_relabel			     = arg_lit0(NULL, "no_relabel", "Keep original node IDs during graph translation. (Default: disabled)");
@@ -284,7 +294,7 @@ int parse_parameters(int argn, char **argv,
 
 #elif defined MODE_FREIGHT
                 k, imbalance, filename_output, suppress_output, 
-                ram_stream, suppress_file_output,
+                ram_stream, rle_length, kappa, suppress_file_output,
 #elif defined MODE_STREAMMAP
                 k, imbalance, preconfiguration, time_limit, integrated_mapping, 
                 multisection, global_msec, qap_label_propagation, qap_blabel_propagation, qap_alabel_propagation, 
@@ -293,7 +303,7 @@ int parse_parameters(int argn, char **argv,
                 hierarchy_parameter_string,  distance_parameter_string, online_distances, filename_output,  
                 use_bin_id, use_compact_bin_id, full_matrix, global_cycle_iterations, suppress_output, kway_fm_limits, 
                 qap_label_iterations, adapt_bal, stream_buffer, one_pass_algorithm, full_stream_mode, use_fennel_objective, 
-		fennel_contraction, ram_stream, stream_output_progress, fennel_dynamics, fennel_batch_order, 
+		fennel_contraction, ram_stream, rle_length, kappa, stream_output_progress, fennel_dynamics, fennel_batch_order,
 		ghost_nodes_procedure, stream_initial_bisections, stream_allow_ghostnodes, ghost_nodes_threshold, 
 		restream_vcycle, batch_inbalance, initial_part_multi_bfs, initial_part_fennel, num_streams_passes,  
 		skip_outer_ls, use_fennel_edgecut_objectives, stream_label_rounds, automatic_buffer_len, xxx, 
@@ -303,7 +313,7 @@ int parse_parameters(int argn, char **argv,
                 k, imbalance,  
                 filename_output, 
                 stream_buffer,
-		ram_stream,
+		ram_stream, rle_length, kappa,
 		stream_output_progress,
 		stream_allow_ghostnodes,
 		num_streams_passes,
@@ -1581,6 +1591,14 @@ int parse_parameters(int argn, char **argv,
 
         if(ram_stream->count > 0) {
                 partition_config.ram_stream = true;
+        }
+
+        if (rle_length->count > 0) {
+            partition_config.rle_length = (LongNodeID)rle_length->ival[0];
+        }
+
+        if (kappa->count > 0) {
+            partition_config.kappa = kappa->dval[0];
         }
 	  
         if(stream_output_progress->count > 0) {

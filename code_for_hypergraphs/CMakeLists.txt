@@ -12,7 +12,7 @@ if(CCACHE_PROGRAM)
 endif()
 project(KaHIP C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) 
@@ -73,6 +73,15 @@ if(OPTIMIZED_OUTPUT)
   add_definitions("-DKAFFPAOUTPUT")
 endif()
 
+include(FetchContent)
+
+FetchContent_Declare(
+        cpi
+        GIT_REPOSITORY https://github.com/kurpicz/cpi.git
+        GIT_TAG "origin/main"
+)
+
+FetchContent_MakeAvailable(cpi)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/app)
@@ -87,37 +96,60 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/tools)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc")
 
 set(LIBKAFFPA_SOURCE_FILES
-  lib/tools/quality_metrics.cpp
-  lib/tools/random_functions.cpp
-  extern/argtable3-3.0.3/argtable3.c)
+        lib/tools/quality_metrics.cpp
+        lib/tools/random_functions.cpp)
 add_library(libkaffpa OBJECT ${LIBKAFFPA_SOURCE_FILES})
+TARGET_LINK_LIBRARIES(libkaffpa PRIVATE cpi)
+
+set(ARGTABLE_SOURCE_FILES
+        extern/argtable3-3.0.3/argtable3.c)
+add_library(argtab OBJECT ${ARGTABLE_SOURCE_FILES})
 
 set(LIBMAPPING_SOURCE_FILES
-  lib/mapping/construct_distance_matrix.cpp
-  )
+        lib/mapping/construct_distance_matrix.cpp
+)
 add_library(libmapping OBJECT ${LIBMAPPING_SOURCE_FILES})
 
+set(GRAPH_IO_SOURCE_FILES
+        lib/io/graph_io_stream.cpp)
+add_library(graphio OBJECT ${GRAPH_IO_SOURCE_FILES})
+target_link_libraries(graphio PRIVATE cpi)
+
 set(LIBSTREAMPARTITIONING_SOURCE_FILES
-  lib/io/graph_io_stream.cpp
-  lib/partition/onepass_partitioning/vertex_partitioning.cpp
-  lib/partition/onepass_partitioning/floating_block.cpp
-  lib/partition/onepass_partitioning/ldg.cpp
-  lib/partition/onepass_partitioning/fennel_approx_sqrt.cpp
-  lib/partition/onepass_partitioning/fennel.cpp)
-add_library(libstreanpartitioning OBJECT ${LIBSTREAMPARTITIONING_SOURCE_FILES})
+        lib/partition/onepass_partitioning/vertex_partitioning.cpp
+        lib/partition/onepass_partitioning/floating_block.cpp
+        lib/partition/onepass_partitioning/ldg.cpp
+        lib/partition/onepass_partitioning/fennel_approx_sqrt.cpp
+        lib/partition/onepass_partitioning/fennel.cpp)
+add_library(libstreampartitioning OBJECT ${LIBSTREAMPARTITIONING_SOURCE_FILES})
+target_link_libraries(libstreampartitioning PRIVATE cpi)
 
 # generate targets for each binary
-add_executable(freight_cut app/freight.cpp $<TARGET_OBJECTS:libkaffpa> $<TARGET_OBJECTS:libmapping> $<TARGET_OBJECTS:libstreanpartitioning>)
+add_executable(freight_cut app/freight.cpp)
 target_compile_definitions(freight_cut PRIVATE "-DMODE_NETLIST")
 target_compile_definitions(freight_cut PRIVATE "-DMODE_FREIGHT")
-target_link_libraries(freight_cut ${OpenMP_CXX_LIBRARIES})
+target_link_libraries(freight_cut
+        PRIVATE cpi
+        graphio
+        libkaffpa
+        argtab
+        libstreampartitioning
+        libmapping
+        ${OpenMP_CXX_LIBRARIES})
 install(TARGETS freight_cut DESTINATION bin)
 
-add_executable(freight_con app/freight.cpp $<TARGET_OBJECTS:libkaffpa> $<TARGET_OBJECTS:libmapping> $<TARGET_OBJECTS:libstreanpartitioning>)
+add_executable(freight_con app/freight.cpp)
 target_compile_definitions(freight_con PRIVATE "-DMODE_NETLIST")
 target_compile_definitions(freight_con PRIVATE "-DMODE_FREIGHT")
 target_compile_definitions(freight_con PRIVATE "-DMODE_CONNECTIVITY")
-target_link_libraries(freight_con ${OpenMP_CXX_LIBRARIES})
+target_link_libraries(freight_con
+        PRIVATE cpi
+        graphio
+        libkaffpa
+        argtab
+        libstreampartitioning
+        libmapping
+        ${OpenMP_CXX_LIBRARIES})
 install(TARGETS freight_con DESTINATION bin)
 
 

@@ -14,6 +14,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <memory>
 
 #include "balance_configuration.h"
 #include "data_structure/graph_access.h"
@@ -34,6 +35,11 @@
 #include "partition/onepass_partitioning/fennel.h"
 #include "partition/onepass_partitioning/fennel_approx_sqrt.h"
 #include "partition/onepass_partitioning/ldg.h"
+
+#include "cpi/run_length_compression.hpp"
+#include "data_structure/compression_vectors/CompressionDataStructure.h"
+#include "data_structure/compression_vectors/RunLengthCompressionVector.h"
+#include "data_structure/compression_vectors/BatchRunLengthCompression.h"
 
 #define MIN(A,B) (((A)<(B))?(A):(B))
 #define MAX(A,B) (((A)>(B))?(A):(B))
@@ -95,6 +101,9 @@ int main(int argn, char **argv) {
 	vertex_partitioning* onepass_partitioner = NULL;
 	initialize_onepass_partitioner(config, onepass_partitioner);
 
+    // container for storing block assignments used by Fennel
+    std::shared_ptr<CompressionDataStructure<PartitionID>> block_assignments;
+
 	int &passes = config.num_streams_passes;
 	for (config.restream_number=0; config.restream_number<passes; config.restream_number++) {
 
@@ -102,6 +111,16 @@ int main(int argn, char **argv) {
 		graph_io_stream::readFirstLineStream(config, graph_filename, total_edge_cut, qap);
 		graph_io_stream::loadRemainingLinesToBinary(config, input);
 		buffer_io_time += io_t.elapsed();
+
+        // set up block assignment container based on algorithm configuration
+        if(config.rle_length == 0) {
+            block_assignments = std::make_shared<RunLengthCompressionVector<PartitionID>>();
+        }
+        else if (config.rle_length > 0) {
+            block_assignments = std::make_shared<BatchRunLengthCompression<PartitionID>>((config.total_nodes /
+                                                                                          config.rle_length) + 1);
+        }
+
 		onepass_partitioner->instantiate_blocks(config.remaining_stream_nodes, config.remaining_stream_edges, config.k, config.imbalance); 		
 		if (config.stream_rec_bisection) {
 			onepass_partitioner->create_problem_tree(config.remaining_stream_nodes, config.remaining_stream_edges, config.k, 
@@ -140,12 +159,12 @@ int main(int argn, char **argv) {
 			// ***************************** perform partitioning ***************************************       
 			t.restart();
 #if defined MODE_PINSETLIST
-			graph_io_stream::readNodeOnePass_pinsl(config, curr_node, my_thread, input, onepass_partitioner);
+			graph_io_stream::readNodeOnePass_pinsl(config, curr_node, my_thread, input, block_assignments, onepass_partitioner);
 #elif defined MODE_NETLIST
-			graph_io_stream::readNodeOnePass_netl(config, curr_node, my_thread, input, onepass_partitioner);
+			graph_io_stream::readNodeOnePass_netl(config, curr_node, my_thread, input, block_assignments, onepass_partitioner);
 #endif
 			PartitionID block = onepass_partitioner->solve_node(curr_node, 1, my_thread);
-			graph_io_stream::register_result(config, curr_node, block, my_thread);
+			graph_io_stream::register_result(config, curr_node, block, my_thread, block_assignments);
 #if defined MODE_NETLIST
 			if(config.dynamic_threashold) {
 				if (config.step_sampled) {
@@ -180,9 +199,9 @@ int main(int argn, char **argv) {
 		std::cout << "time spent for integrated mapping: " << global_mapping_time  << std::endl;
 	}
 #if defined MODE_PINSETLIST
-	graph_io_stream::streamEvaluateHPartition_pinsl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count);
+	graph_io_stream::streamEvaluateHPartition_pinsl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count, block_assignments);
 #elif defined MODE_NETLIST
-	graph_io_stream::streamEvaluateHPartition_netl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count);
+	graph_io_stream::streamEvaluateHPartition_netl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count, block_assignments);
 #endif
 	std::cout << "nanoseconds / pin for integrated mapping: " << global_mapping_time*1000000000./pin_count  << std::endl;
 	std::cout << "pin count: \t"	<< pin_count << std::endl;

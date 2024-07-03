@@ -585,6 +585,14 @@ struct PartitionConfig
 	bool read_ew;
 	bool read_nw;
 
+    //=======================================
+    //============= Run Length Compression ==============
+    //=======================================
+    LongNodeID rle_length;
+    double kappa;
+    PartitionID previous_assignment;
+
+
         //=======================================
         // Conversion of graphs between formats =
         //=======================================

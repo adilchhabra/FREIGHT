@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <list>
 #include <algorithm>
+#include <memory>
 
 #include "definitions.h"
 #include "data_structure/hypergraph.h"
@@ -33,6 +34,10 @@
 #include "data_structure/matrix/online_distance_matrix.h"
 #include "partition/onepass_partitioning/vertex_partitioning.h"
 #include "partition/onepass_partitioning/fennel.h"
+#include "cpi/run_length_compression.hpp"
+#include "data_structure/compression_vectors/CompressionDataStructure.h"
+#include "data_structure/compression_vectors/RunLengthCompressionVector.h"
+#include "data_structure/compression_vectors/BatchRunLengthCompression.h"
 
 #define MIN(A,B) (((A)<(B))?(A):(B))
 #define MAX(A,B) (((A)>(B))?(A):(B))
@@ -58,19 +63,23 @@ class graph_io_stream {
 
                 static
 		void readNodeOnePass_pinsl (PartitionConfig & config, LongNodeID curr_node, int my_thread, 
-					std::vector<std::vector<LongNodeID>>* &input, vertex_partitioning* onepass_partitioner);
+                                    std::vector<std::vector<LongNodeID>>* &input,
+                                    const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
+                                    vertex_partitioning* onepass_partitioner);
 
                 static
 		void readNodeOnePass_netl (PartitionConfig & config, LongNodeID curr_node, int my_thread, 
-					std::vector<std::vector<LongNodeID>>* &input, vertex_partitioning* onepass_partitioner);
+                                   std::vector<std::vector<LongNodeID>>* &input,
+                                   const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
+                                   vertex_partitioning* onepass_partitioner);
 
                 static
 		void streamEvaluateHPartition_pinsl(PartitionConfig & config, const std::string & filename, double& cutNet, double& connectivity, 
-					EdgeWeight& qap, LongNodeID& pin_count);
+					EdgeWeight& qap, LongNodeID& pin_count, const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments);
 
                 static
 		void streamEvaluateHPartition_netl(PartitionConfig & config, const std::string & filename, double& cutNet, double& connectivity, 
-					EdgeWeight& qap, LongNodeID& pin_count);
+					EdgeWeight& qap, LongNodeID& pin_count, const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments);
 
 		static
 		void streamEvaluateEdgePartition_netl(PartitionConfig & config, const std::string & filename, double& cutNet, double& connectivity, 
@@ -116,7 +125,7 @@ class graph_io_stream {
 		void writeHyperGraph_HMetisFormat(hypergraph & H, const std::string & filename);
 
                 static
-		void register_result(PartitionConfig & config, LongNodeID curr_node, PartitionID assigned_block, int my_thread);
+		void register_result(PartitionConfig & config, LongNodeID curr_node, PartitionID assigned_block, int my_thread, const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments);
 
                 static
 		void readPartition(PartitionConfig & config, const std::string & filename);
@@ -124,7 +133,9 @@ class graph_io_stream {
 
 
 inline void graph_io_stream::readNodeOnePass_pinsl (PartitionConfig & config, LongNodeID curr_node, int my_thread, 
-				std::vector<std::vector<LongNodeID>>* &input, vertex_partitioning* onepass_partitioner) {
+				                                    std::vector<std::vector<LongNodeID>>* &input,
+                                                    const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
+                                                    vertex_partitioning* onepass_partitioner) {
         /* NodeWeight total_nodeweight = 0; */
 	auto& read_ew = config.read_ew;
 	auto& read_nw = config.read_nw;
@@ -164,7 +175,14 @@ inline void graph_io_stream::readNodeOnePass_pinsl (PartitionConfig & config, Lo
 		PartitionID targetGlobalPar = INVALID_PARTITION;
 		for (NodeID i=0; i<net_size; i++) {
 			pin = line_numbers[col_counter++];
-			PartitionID block = (*config.stream_nodes_assign)[pin-1];
+			PartitionID block;
+            if(config.rle_length==-1) {
+                block = (*config.stream_nodes_assign)[pin-1];
+            } else if (config.rle_length==0) {
+                block = block_assignments->GetValueByIndex(pin-1);
+            } else {
+                block = block_assignments->GetValueByBatchIndex((pin - 1) / config.rle_length, (pin - 1) % config.rle_length);
+            }
 #if defined MODE_CONNECTIVITY
 			if (block != INVALID_PARTITION) {
 				targetGlobalPar = block;
@@ -212,7 +230,9 @@ inline void graph_io_stream::readNodeOnePass_pinsl (PartitionConfig & config, Lo
 }
 
 inline void graph_io_stream::readNodeOnePass_netl (PartitionConfig & config, LongNodeID curr_node, int my_thread, 
-				std::vector<std::vector<LongNodeID>>* &input, vertex_partitioning* onepass_partitioner) {
+                                                    std::vector<std::vector<LongNodeID>>* &input,
+                                                    const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
+                                                    vertex_partitioning* onepass_partitioner) {
 	/* NodeWeight total_nodeweight = 0; */
 	auto& read_ew = config.read_ew;
 	auto& read_nw = config.read_nw;
@@ -340,8 +360,16 @@ inline std::vector<std::vector<LongNodeID>>* graph_io_stream::loadLinesFromStrea
 	return input;
 }
 
-inline void graph_io_stream::register_result(PartitionConfig & config, LongNodeID curr_node, PartitionID assigned_block, int my_thread) {
-	(*config.stream_nodes_assign)[curr_node] = assigned_block;
+inline void graph_io_stream::register_result(PartitionConfig & config, LongNodeID curr_node, PartitionID assigned_block, int my_thread,
+                                             const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments) {
+	//(*config.stream_nodes_assign)[curr_node] = assigned_block;
+    if (config.rle_length == -1) {
+        (*config.stream_nodes_assign)[curr_node] = assigned_block;
+    } else if (config.rle_length == 0) {
+        block_assignments->Append(assigned_block);
+    } else {
+        block_assignments->BatchAppend(curr_node/config.rle_length, assigned_block);
+    }
 	(*config.stream_blocks_weight)[assigned_block] += 1;
 #if defined MODE_NETLIST
 	for (auto& neighboring_net : config.valid_neighboring_nets[my_thread]) {
@@ -353,6 +381,7 @@ inline void graph_io_stream::register_result(PartitionConfig & config, LongNodeI
 #endif
 	}
 #endif
+    config.previous_assignment = assigned_block;
 }
 
 inline void graph_io_stream::readFirstLineStream(PartitionConfig & partition_config, std::string graph_filename, double& total_edge_cut, EdgeWeight& qap) {
@@ -401,7 +430,7 @@ inline void graph_io_stream::readFirstLineStream(PartitionConfig & partition_con
 		partition_config.stream_edges_assign  = new std::vector<PartitionID>(partition_config.remaining_stream_edges, INVALID_PARTITION);
 	}
 #endif
-	if (partition_config.stream_nodes_assign == NULL) {
+	if (partition_config.stream_nodes_assign == NULL && partition_config.rle_length==-1) {
 		partition_config.stream_nodes_assign  = new std::vector<PartitionID>(partition_config.remaining_stream_nodes, INVALID_PARTITION);
 	}
 	if (partition_config.stream_blocks_weight == NULL) {
