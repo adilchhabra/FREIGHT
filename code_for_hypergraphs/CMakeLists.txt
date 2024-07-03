@@ -91,7 +91,10 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/io)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/partition)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/tools)
 
-
+# Add FlatBuffers directly to our build. This defines the `flatbuffers` target.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/flatbuffers
+        ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers-build
+        EXCLUDE_FROM_ALL)
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc")
 
@@ -135,6 +138,7 @@ target_link_libraries(freight_cut
         argtab
         libstreampartitioning
         libmapping
+        flatbuffers
         ${OpenMP_CXX_LIBRARIES})
 install(TARGETS freight_cut DESTINATION bin)
 
@@ -149,6 +153,7 @@ target_link_libraries(freight_con
         argtab
         libstreampartitioning
         libmapping
+        flatbuffers
         ${OpenMP_CXX_LIBRARIES})
 install(TARGETS freight_con DESTINATION bin)
 

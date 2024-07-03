@@ -41,12 +41,16 @@
 #include "data_structure/compression_vectors/RunLengthCompressionVector.h"
 #include "data_structure/compression_vectors/BatchRunLengthCompression.h"
 
+#include "FlatBufferWriter.h"
+#include "Freight_Info_generated.h"
+
 #define MIN(A,B) (((A)<(B))?(A):(B))
 #define MAX(A,B) (((A)>(B))?(A):(B))
 
 
 void initialize_onepass_partitioner(PartitionConfig & config, vertex_partitioning*& onepass_partitioner);
-
+long getMaxRSS();
+std::string extractBaseFilename(const std::string& fullPath);
 
 int main(int argn, char **argv) {
         PartitionConfig config;
@@ -98,6 +102,11 @@ int main(int argn, char **argv) {
 
 	bool already_fully_partitioned;
 
+    if(config.edge_partition) {
+        std::cout << "Running streaming edge partitioner..." << std::endl;
+    }
+    processing_t.restart();
+
 	vertex_partitioning* onepass_partitioner = NULL;
 	initialize_onepass_partitioner(config, onepass_partitioner);
 
@@ -147,7 +156,11 @@ int main(int argn, char **argv) {
 			}
 		}
 
-		processing_t.restart();
+        LongEdgeID  edge_count = 0;
+        if (config.edge_partition) {
+            config.n_batches = config.total_edges;
+        }
+
 #pragma omp parallel for schedule(runtime) 
 		for (LongNodeID curr_node = 0; curr_node < config.n_batches; curr_node++) {
 			int my_thread = omp_get_thread_num();
@@ -161,60 +174,99 @@ int main(int argn, char **argv) {
 #if defined MODE_PINSETLIST
 			graph_io_stream::readNodeOnePass_pinsl(config, curr_node, my_thread, input, block_assignments, onepass_partitioner);
 #elif defined MODE_NETLIST
-			graph_io_stream::readNodeOnePass_netl(config, curr_node, my_thread, input, block_assignments, onepass_partitioner);
+            if(config.edge_partition) {
+                std::vector<LongNodeID> &line_numbers = (*input)[0];
+                LongNodeID col_counter = 0;
+                LongNodeID cur_neighbor;
+                std::vector<LongNodeID> cur_hyperedge(2);
+                cur_hyperedge[0] = curr_node;
+                while (col_counter < line_numbers.size()) {
+                    cur_neighbor = line_numbers[col_counter++] - 1;
+                    if(cur_neighbor < curr_node) continue;
+                    cur_hyperedge[1] = cur_neighbor;
+                    graph_io_stream::readNodeOnePass_graph_to_hypergraph(config, edge_count, my_thread, cur_hyperedge,
+                                                                         block_assignments,
+                                                                         onepass_partitioner);
+                    PartitionID block = onepass_partitioner->solve_node(edge_count, 1,
+                                                                        config.previous_assignment,
+                                                                        config.kappa, my_thread);
+                    graph_io_stream::register_result(config, edge_count, block, my_thread,
+                                                     block_assignments);
+
+                    if (config.dynamic_threashold) {
+                        if (config.step_sampled) {
+                            config.edges_sampled += config.stream_sampling;
+                            config.time_sampled += t.elapsed();
+                        } else {
+                            config.edges_swept += (config.edges >= config.stream_sampling) ? config.edges : 0;
+                            config.time_swept += (config.edges >= config.stream_sampling) ? t.elapsed() : 0;
+                        }
+                        config.sampling_threashold = (config.edges_sampled > 0 && config.edges_swept > 0 &&
+                                edge_count % 1000 == 999) ?
+                                                     (config.edges_swept * config.time_sampled) /
+                                                     (config.time_swept * config.edges_sampled) :
+                                                     config.sampling_threashold;
+                        config.sampling_threashold = MIN(config.sampling_threashold, 4);
+                    }
+
+                    edge_count++;
+                }
+                if(!config.ram_stream) {
+                    delete input;
+                }
+            } else {
+                graph_io_stream::readNodeOnePass_netl(config, curr_node, my_thread, input, block_assignments, onepass_partitioner);
+            }
 #endif
-			PartitionID block = onepass_partitioner->solve_node(curr_node, 1, config.previous_assignment, config.kappa, my_thread);
-			graph_io_stream::register_result(config, curr_node, block, my_thread, block_assignments);
+            if(!config.edge_partition) {
+                PartitionID block = onepass_partitioner->solve_node(curr_node, 1, config.previous_assignment,
+                                                                    config.kappa, my_thread);
+                graph_io_stream::register_result(config, curr_node, block, my_thread, block_assignments);
 #if defined MODE_NETLIST
-			if(config.dynamic_threashold) {
-				if (config.step_sampled) {
-					config.edges_sampled += config.stream_sampling;
-					config.time_sampled += t.elapsed();
-				} else {
-					config.edges_swept += (config.edges >=config.stream_sampling) ? config.edges : 0;
-					config.time_swept += (config.edges >=config.stream_sampling) ? t.elapsed() : 0;
-				}
-				config.sampling_threashold = (config.edges_sampled>0 && config.edges_swept >0 && curr_node%1000==999) ?
-					(config.edges_swept * config.time_sampled) / (config.time_swept * config.edges_sampled) :
-					config.sampling_threashold;
-				config.sampling_threashold = MIN(config.sampling_threashold, 4);
-			}
+                if(config.dynamic_threashold) {
+                    if (config.step_sampled) {
+                        config.edges_sampled += config.stream_sampling;
+                        config.time_sampled += t.elapsed();
+                    } else {
+                        config.edges_swept += (config.edges >=config.stream_sampling) ? config.edges : 0;
+                        config.time_swept += (config.edges >=config.stream_sampling) ? t.elapsed() : 0;
+                    }
+                    config.sampling_threashold = (config.edges_sampled>0 && config.edges_swept >0 && curr_node%1000==999) ?
+                        (config.edges_swept * config.time_sampled) / (config.time_swept * config.edges_sampled) :
+                        config.sampling_threashold;
+                    config.sampling_threashold = MIN(config.sampling_threashold, 4);
+                }
 #endif
+            }
 			global_mapping_time += t.elapsed();
 		}
-		total_time += processing_t.elapsed();
 
 		if (config.ram_stream) {
 			delete input;
 			/* delete lines; */
 		}
 	}
+    total_time += processing_t.elapsed();
+    long maxRSS = getMaxRSS();
+    std::string baseFilename = extractBaseFilename(graph_filename);
 
-	// output some information about the partition that we have computed 
-    std::cout << "Hypergraph has " << config.total_nodes <<  " nodes and " << config.total_edges <<  " nets"  << std::endl;
-	std::cout << "Total processing time: " << total_time  << std::endl;
-	std::cout << "io time: " << buffer_io_time  << std::endl;
+    FlatBufferWriter fb_writer;
+    fb_writer.updateResourceConsumption(buffer_io_time, global_mapping_time, total_time, maxRSS);
 
-	if(config.parallel_nodes < 2) {
-		std::cout << "time spent for integrated mapping: " << global_mapping_time  << std::endl;
-	}
+    if(!config.edge_partition) {
 #if defined MODE_PINSETLIST
-	graph_io_stream::streamEvaluateHPartition_pinsl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count, block_assignments);
+        graph_io_stream::streamEvaluateHPartition_pinsl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count, block_assignments);
 #elif defined MODE_NETLIST
-	graph_io_stream::streamEvaluateHPartition_netl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count, block_assignments);
+        graph_io_stream::streamEvaluateHPartition_netl(config, graph_filename, total_edge_cut, connectivity, qap, pin_count, block_assignments);
 #endif
-	std::cout << "nanoseconds / pin for integrated mapping: " << global_mapping_time*1000000000./pin_count  << std::endl;
-	std::cout << "pin count: \t"	<< pin_count << std::endl;
-	std::cout << "connectivity    " << connectivity << std::endl;
-	std::cout << "cut\t\t"		<< total_edge_cut << std::endl;
-	std::cout << "finalobjective  " << total_edge_cut << std::endl;
-	std::cout << "balance \t"	<< qm.balance_full_stream(*config.stream_blocks_weight) << std::endl;
-	std::cout << "quadratic assignment objective J(C,D,Pi') = " << qap  << std::endl;
-
+        double balance = qm.balance_full_stream(*config.stream_blocks_weight);
+        fb_writer.updateHypergraphPartitionMetrics(total_edge_cut, connectivity, balance);
+    }
+    fb_writer.write(baseFilename, config);
 	// write the partition to the disc 
 	std::stringstream filename;
 	if(!config.filename_output.compare("")) {
-		filename << "tmppartition" << config.k;
+        filename << "part_" << baseFilename << "_" << config.k << ".txt";
 	} else {
 		filename << config.filename_output;
 	}
@@ -269,3 +321,29 @@ void initialize_onepass_partitioner(PartitionConfig & config, vertex_partitionin
 	onepass_partitioner->set_sampling_threashold(config.sampling_threashold);
 }
 
+long getMaxRSS() {
+    struct rusage usage;
+
+    if (getrusage(RUSAGE_SELF, &usage) == 0) {
+        // The maximum resident set size is in kilobytes
+        return usage.ru_maxrss;
+    } else {
+        std::cerr << "Error getting resource usage information." << std::endl;
+        // Return a sentinel value or handle the error in an appropriate way
+        return -1;
+    }
+}
+
+// Function to extract the base filename without path and extension
+std::string extractBaseFilename(const std::string& fullPath) {
+    size_t lastSlash = fullPath.find_last_of('/');
+    size_t lastDot = fullPath.find_last_of('.');
+
+    if (lastSlash != std::string::npos) {
+        // Found a slash, extract the substring after the last slash
+        return fullPath.substr(lastSlash + 1, lastDot - lastSlash - 1);
+    } else {
+        // No slash found, just extract the substring before the last dot
+        return fullPath.substr(0, lastDot);
+    }
+}

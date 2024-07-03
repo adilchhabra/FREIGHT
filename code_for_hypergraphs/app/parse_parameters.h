@@ -236,6 +236,9 @@ int parse_parameters(int argn, char **argv,
 	struct arg_lit *use_self_sorting_array	             = arg_lit0(NULL, "use_self_sorting_array", "Optimized data structure that makes Fennel and LDG O(n+m+k). (Default: disabled)");
 	struct arg_dbl *sampling_threashold                  = arg_dbl0(NULL, "sampling_threashold", NULL, "Minimum ratio of edges (r. neighboring blocks) by samples to activate the sampling routine. Default: 1");
 
+    //edge partition
+    struct arg_lit *edge_partition			     = arg_lit0(NULL, "edge_partition", "Compute edge partition of graph. (Default: disabled)");
+
     // run length compression
     struct arg_int *rle_length =
             arg_int0(NULL, "rle_length", NULL,
@@ -244,6 +247,13 @@ int parse_parameters(int argn, char **argv,
     struct arg_dbl *kappa = arg_dbl0(NULL, "kappa", NULL,
                                      "Prioritize previous block assignment by "
                                      "kappa times: Default: Disabled(1).");
+
+    // flatbuffer logging
+    struct arg_lit *write_results = arg_lit0(
+            NULL, "write_results",
+            "Write experimental results to flatbuffer file. (Default: disabled)");
+    struct arg_str *output_path = arg_str0(
+            NULL, "output_path", NULL, "Specify the path of the output file(s).");
 
 
 	// translation of graphs
@@ -294,7 +304,7 @@ int parse_parameters(int argn, char **argv,
 
 #elif defined MODE_FREIGHT
                 k, imbalance, filename_output, suppress_output, 
-                ram_stream, rle_length, kappa, suppress_file_output,
+                ram_stream, rle_length, kappa, write_results, output_path, suppress_file_output, edge_partition,
 #elif defined MODE_STREAMMAP
                 k, imbalance, preconfiguration, time_limit, integrated_mapping, 
                 multisection, global_msec, qap_label_propagation, qap_blabel_propagation, qap_alabel_propagation, 
@@ -303,7 +313,7 @@ int parse_parameters(int argn, char **argv,
                 hierarchy_parameter_string,  distance_parameter_string, online_distances, filename_output,  
                 use_bin_id, use_compact_bin_id, full_matrix, global_cycle_iterations, suppress_output, kway_fm_limits, 
                 qap_label_iterations, adapt_bal, stream_buffer, one_pass_algorithm, full_stream_mode, use_fennel_objective, 
-		fennel_contraction, ram_stream, rle_length, kappa, stream_output_progress, fennel_dynamics, fennel_batch_order,
+		fennel_contraction, ram_stream, rle_length, kappa, write_results, output_path, stream_output_progress, fennel_dynamics, fennel_batch_order,
 		ghost_nodes_procedure, stream_initial_bisections, stream_allow_ghostnodes, ghost_nodes_threshold, 
 		restream_vcycle, batch_inbalance, initial_part_multi_bfs, initial_part_fennel, num_streams_passes,  
 		skip_outer_ls, use_fennel_edgecut_objectives, stream_label_rounds, automatic_buffer_len, xxx, 
@@ -314,6 +324,7 @@ int parse_parameters(int argn, char **argv,
                 filename_output, 
                 stream_buffer,
 		ram_stream, rle_length, kappa,
+        write_results, output_path,
 		stream_output_progress,
 		stream_allow_ghostnodes,
 		num_streams_passes,
@@ -1599,6 +1610,18 @@ int parse_parameters(int argn, char **argv,
 
         if (kappa->count > 0) {
             partition_config.kappa = kappa->dval[0];
+        }
+
+        if(edge_partition->count > 0) {
+            partition_config.edge_partition = true;
+        }
+
+        if (write_results->count > 0) {
+            partition_config.write_results = true;
+        }
+
+        if (output_path->count > 0) {
+            partition_config.output_path = output_path->sval[0];
         }
 	  
         if(stream_output_progress->count > 0) {

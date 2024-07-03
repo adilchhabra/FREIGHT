@@ -74,6 +74,13 @@ class graph_io_stream {
                                    vertex_partitioning* onepass_partitioner);
 
                 static
+        void readNodeOnePass_graph_to_hypergraph (PartitionConfig & config, LongNodeID curr_node,
+                                                  int my_thread,
+                                                  std::vector<LongNodeID> &cur_hyperedge,
+                                                  const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
+                                                  vertex_partitioning* onepass_partitioner);
+
+                static
 		void streamEvaluateHPartition_pinsl(PartitionConfig & config, const std::string & filename, double& cutNet, double& connectivity, 
 					EdgeWeight& qap, LongNodeID& pin_count, const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments);
 
@@ -315,8 +322,6 @@ inline void graph_io_stream::readNodeOnePass_netl (PartitionConfig & config, Lon
                     targetGlobalPar = block_assignments->GetValueByBatchIndex((net - 1) / config.rle_length,
                                                                     (net - 1) % config.rle_length);
                 }
-                //if(targetGlobalPar == INVALID_PARTITION)
-                //std::cout << "n-1 = " << net-1 << " is less than current node " << curr_node << std::endl;
             }
 			if(targetGlobalPar != CUT_NET) valid_neighboring_nets.push_back(net-1);
 			if(targetGlobalPar != INVALID_PARTITION && targetGlobalPar != CUT_NET) {
@@ -347,6 +352,113 @@ inline void graph_io_stream::readNodeOnePass_netl (PartitionConfig & config, Lon
         /* config.total_stream_nodeweight  += total_nodeweight; */
         /* config.remaining_stream_nodes   -= nmbNodes; */
 	config.remaining_stream_nodes--;
+}
+
+inline void graph_io_stream::readNodeOnePass_graph_to_hypergraph (PartitionConfig & config, LongNodeID curr_node, int my_thread,
+                                                                  std::vector<LongNodeID> &cur_hyperedge,
+                                                                  const std::shared_ptr<CompressionDataStructure<PartitionID>>& block_assignments,
+                                                                  vertex_partitioning* onepass_partitioner) {
+    /* NodeWeight total_nodeweight = 0; */
+    auto& read_ew = config.read_ew;
+    auto& read_nw = config.read_nw;
+    NodeWeight weight;
+    LongEdgeID net;
+    /* LongNodeID nmbNodes = 1; */
+
+    LongNodeID cursor = (config.ram_stream) ? curr_node : 0;
+
+    if((config.one_pass_algorithm == ONEPASS_HASHING) || (config.one_pass_algorithm == ONEPASS_HASHING_CRC32)) {
+        return;
+    }
+
+    auto& all_blocks_to_keys = config.all_blocks_to_keys[my_thread];
+    auto& next_key = config.next_key[my_thread];
+    auto& neighbor_blocks = config.neighbor_blocks[my_thread];
+    auto& sampled_edges = config.sampled_edges[my_thread];
+    auto& valid_neighboring_nets = config.valid_neighboring_nets[my_thread];
+
+    valid_neighboring_nets.clear();
+    onepass_partitioner->clear_edgeweight_blocks(neighbor_blocks, next_key, my_thread);
+    next_key = 0;
+    LongNodeID col_counter = 0;
+    weight = (read_nw) ? cur_hyperedge[col_counter++] : 1;
+    /* total_nodeweight += weight; */
+
+
+    PartitionID selecting_factor = (1+(PartitionID)read_ew);
+    config.edges = (cur_hyperedge.size()-col_counter) / selecting_factor; // = number of neighbors of current node
+    //std::cout << config.edges << std::endl;
+    float scaling_factor = 1;
+    if(config.sample_edges) {
+        EdgeID n_sampled_edges = (config.sampling_threashold*config.stream_sampling < config.edges) ? config.stream_sampling : config.edges;
+        register bool sampling_active = n_sampled_edges < config.edges;
+        config.step_sampled = sampling_active;
+        scaling_factor = config.edges / (float) n_sampled_edges; // Multiply weight by proportion stored in edge_weight
+        for (PartitionID i=0; i<n_sampled_edges; i++) {
+            PartitionID id_rand = sampling_active ? random_functions::nextIntHashing(config.edges) : i;
+            PartitionID edge_pos = col_counter + id_rand*selecting_factor;
+            net = cur_hyperedge[edge_pos];
+
+            sampled_edges[i].first  = (*config.stream_edges_assign)[net-1];
+            sampled_edges[i].second = (read_ew) ? cur_hyperedge[edge_pos+1] : 1;
+            if(sampled_edges[i].first != CUT_NET) valid_neighboring_nets.push_back(net-1);
+        }
+        for (PartitionID i=0; i<n_sampled_edges; i++) {
+            const auto& [targetGlobalPar,edge_weight] = sampled_edges[i];
+            if(targetGlobalPar != INVALID_PARTITION && targetGlobalPar != CUT_NET) {
+                PartitionID key = all_blocks_to_keys[targetGlobalPar];
+                if (key >= next_key || neighbor_blocks[key].first != targetGlobalPar) {
+                    all_blocks_to_keys[targetGlobalPar] = next_key;
+                    neighbor_blocks[next_key++] = sampled_edges[i];
+                } else {
+                    neighbor_blocks[key].second += edge_weight;
+                }
+            }
+        }
+    } else {
+        while (col_counter < cur_hyperedge.size()) {
+            net = cur_hyperedge[col_counter++];
+            //std::cout << net << " ";
+            EdgeWeight edge_weight = (read_ew) ? cur_hyperedge[col_counter++] : 1;
+
+            PartitionID targetGlobalPar = INVALID_PARTITION;
+            if(net-1 < curr_node) {
+                if (config.rle_length == -1) {
+                    targetGlobalPar = (*config.stream_nodes_assign)[net - 1];
+                } else if (config.rle_length == 0) {
+                    targetGlobalPar = block_assignments->GetValueByIndex(net - 1);
+                } else {
+                    targetGlobalPar = block_assignments->GetValueByBatchIndex((net - 1) / config.rle_length,
+                                                                              (net - 1) % config.rle_length);
+                }
+            }
+
+            if(targetGlobalPar != CUT_NET) valid_neighboring_nets.push_back(net-1);
+            if(targetGlobalPar != INVALID_PARTITION && targetGlobalPar != CUT_NET) {
+                PartitionID key = all_blocks_to_keys[targetGlobalPar];
+                if (key >= next_key || neighbor_blocks[key].first != targetGlobalPar) {
+                    all_blocks_to_keys[targetGlobalPar] = next_key;
+                    auto& new_element = neighbor_blocks[next_key];
+                    new_element.first  = targetGlobalPar;
+                    new_element.second = edge_weight;
+                    next_key++;
+                } else {
+                    neighbor_blocks[key].second += edge_weight;
+                }
+            }
+        }
+        //std::cout << std::endl;
+    }
+
+    for (PartitionID key=0; key < next_key; key++) {
+        auto& element = neighbor_blocks[key];
+        onepass_partitioner->load_edge(element.first, element.second*scaling_factor, my_thread);
+    }
+
+    /* config.total_stream_nodecounter += nmbNodes; */
+    /* config.total_stream_nodeweight  += total_nodeweight; */
+    /* config.remaining_stream_nodes   -= nmbNodes; */
+    config.remaining_stream_nodes--;
 }
 
 inline void graph_io_stream::loadRemainingLinesToBinary(PartitionConfig & partition_config, std::vector<std::vector<LongNodeID>>* &input) {
@@ -445,6 +557,14 @@ inline void graph_io_stream::readFirstLineStream(PartitionConfig & partition_con
 
 	partition_config.total_edges = partition_config.remaining_stream_edges;
 	partition_config.total_nodes = partition_config.remaining_stream_nodes;
+
+    if(partition_config.edge_partition) {
+        LongEdgeID temp_node_count = partition_config.total_nodes;
+        partition_config.total_nodes = partition_config.total_edges;
+        partition_config.total_edges = temp_node_count;
+        partition_config.remaining_stream_nodes = partition_config.total_nodes;
+        partition_config.remaining_stream_edges = partition_config.total_edges;
+    }
 		 
 #if defined MODE_NETLIST
 	if (partition_config.stream_edges_assign == NULL) {

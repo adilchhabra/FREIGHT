@@ -586,12 +586,22 @@ struct PartitionConfig
 	bool read_nw;
 
     //=======================================
-    //============= Run Length Compression ==============
+    //============ Edge Partition ===========
+    //=======================================
+    bool edge_partition;
+
+    //=======================================
+    //====== Run Length Compression =========
     //=======================================
     LongNodeID rle_length;
     double kappa;
     PartitionID previous_assignment;
 
+    //=======================================
+    //======== Flatbuffer Logging ===========
+    //=======================================
+    bool write_results;
+    std::string output_path;
 
         //=======================================
         // Conversion of graphs between formats =

@@ -1,0 +1,46 @@
+namespace FreightInfo;
+
+table PartitionLog {
+    graph_metadata: GraphMetadata;
+    partition_configuration: PartitionConfiguration;
+    runtime: RunTime;
+    memory_consumption: MemoryConsumption;
+    metrics: PartitionMetrics;
+}
+
+table GraphMetadata {
+    filename: string;
+    num_nodes: ulong;
+    num_edges: ulong;
+}
+
+table PartitionConfiguration {
+    k: uint;
+    seed: int;
+    input_balance: double;
+    edge_partition: int;
+    rle_length: ulong;
+    kappa: double;
+}
+
+table RunTime {
+    io_time: double;
+    mapping_time: double;
+    total_time: double;
+}
+
+table PartitionMetrics{
+    cut_net: double;
+    connectivity: double;
+    edge_cut: ulong;
+    vertex_cut: ulong;
+    replicas: ulong;
+    replication_factor: double;
+    balance: double;
+}
+
+table MemoryConsumption{
+    max_rss: long;
+}
+
+root_type PartitionLog;
