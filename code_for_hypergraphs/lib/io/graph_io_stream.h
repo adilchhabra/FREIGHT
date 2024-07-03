@@ -176,12 +176,17 @@ inline void graph_io_stream::readNodeOnePass_pinsl (PartitionConfig & config, Lo
 		for (NodeID i=0; i<net_size; i++) {
 			pin = line_numbers[col_counter++];
 			PartitionID block;
-            if(config.rle_length==-1) {
-                block = (*config.stream_nodes_assign)[pin-1];
-            } else if (config.rle_length==0) {
-                block = block_assignments->GetValueByIndex(pin-1);
+            if(pin-1 < curr_node) {
+                if (config.rle_length == -1) {
+                    block = (*config.stream_nodes_assign)[pin - 1];
+                } else if (config.rle_length == 0) {
+                    block = block_assignments->GetValueByIndex(pin - 1);
+                } else {
+                    block = block_assignments->GetValueByBatchIndex((pin - 1) / config.rle_length,
+                                                                    (pin - 1) % config.rle_length);
+                }
             } else {
-                block = block_assignments->GetValueByBatchIndex((pin - 1) / config.rle_length, (pin - 1) % config.rle_length);
+                block = INVALID_PARTITION;
             }
 #if defined MODE_CONNECTIVITY
 			if (block != INVALID_PARTITION) {
